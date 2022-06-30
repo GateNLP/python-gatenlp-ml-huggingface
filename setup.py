@@ -3,6 +3,7 @@
 """Packaging script for the gatenlp_ml_huggingface library."""
 import sys
 import os
+import re
 from setuptools import setup, find_packages
 
 if sys.version_info < (3, 7):
