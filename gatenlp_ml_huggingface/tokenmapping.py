@@ -2,7 +2,7 @@
 Helper functions for mapping words and per-word labels to transformers tokens and
 transformers labels and back.
 """
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict, Callable
 from collections import Counter
 from transformers import BatchEncoding
 
@@ -10,7 +10,7 @@ from transformers import BatchEncoding
 def map_labels_words2tokens(
         tokresult: BatchEncoding,
         wordlabels: List[List[Union[int, str]]],
-        subseq_label: None,
+        subseq_label: Optional[Union[str, Dict, Callable]] = None,
 ) -> List[List[Optional[Union[int, str]]]]:
     """
     This creates the batch of label ids or labels per transformers token required for training.
