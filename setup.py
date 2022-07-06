@@ -33,7 +33,7 @@ setup(
     version=version,
     author="Johann Petrak",
     author_email="johann.petrak@gmail.com",
-    url="https://github.com/GateNLP/python-gatenlp",
+    url="https://github.com/GateNLP/python-gatenlp-ml-huggingface",
     keywords=["nlp", "text processing", "natural language processing", "machinge learning"],
     description="Train and use Huggingface models for GATE NLP",
     long_description=readme,
