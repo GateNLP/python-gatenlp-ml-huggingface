@@ -23,6 +23,7 @@ class HfTokenClassificationDestination(DocumentDestination):
             type2code: Optional[Dict] = None,
             scheme: str = "BIO",
             writer_batch_size: int = 100,
+            labels: Optional[List[str]] = None,
     ):
         super().__init__()
         if not os.path.isdir(outdir):
@@ -40,19 +41,21 @@ class HfTokenClassificationDestination(DocumentDestination):
         self.chunk_types = chunk_types
         self.type2code = type2code
         self.scheme = scheme
-        if scheme in ["BIO", "IOB"]:
-            lnames = ["O"]
-            for ct in chunk_types:
-                ctn = type2code.get(ct, ct)
-                lnames.append("B-"+ctn)
-                lnames.append("I-" + ctn)
+        if labels is None:
+            if scheme in ["BIO", "IOB"]:
+                labels = ["O"]
+                for ct in chunk_types:
+                    ctn = type2code.get(ct, ct)
+                    labels.append("B-"+ctn)
+                    labels.append("I-" + ctn)
+            else:
+                raise Exception("Cannot auto-generate the labels from the chunk types and scheme")
+        self.labels = labels
         self.features = Features(dict(
             id=Value(dtype="string"),
             tokens=Sequence(feature=Value(dtype="string")),
             labels=Sequence(feature=ClassLabel(
-                names=['O', 'B-corporation', 'I-corporation',
-                       'B-creative-work', 'I-creative-work', 'B-group', 'I-group',
-                       'B-location', 'I-location', 'B-person', 'I-person', 'B-product', 'I-product'])),
+                names=labels)),
         ))
         self.writer = ArrowWriter(
             path=os.path.join(self.outdir, "tmp.arrow"),
@@ -95,6 +98,7 @@ class HfTokenClassificationDestination(DocumentDestination):
         self.writer.finalize()
         self.writer.close()
         self.dataset = Dataset.from_file(os.path.join(self.outdir, "tmp.arrow"))
+        print("Set dataset to", self.dataset)
         self.dataset.save_to_disk(self.outdir)
         os.remove(os.path.join(self.outdir, "tmp.arrow"))
 
