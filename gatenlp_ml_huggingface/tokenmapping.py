@@ -63,7 +63,9 @@ def map_labels_words2tokens(
                 # another token for the same word
                 app = wordlabels[inputrow][wordid]
                 curwordidx += 1
-                if callable(subseq_label):
+                if subseq_label is None:
+                    pass
+                elif callable(subseq_label):
                     app = subseq_label(app, curwordidx)
                 elif isinstance(subseq_label, dict):
                     app = subseq_label[app]

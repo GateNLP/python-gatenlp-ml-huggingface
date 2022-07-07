@@ -10,6 +10,8 @@ words2 = [["just", "this"], ["and", "this"]]
 codes2 = [["BX",   "IX"],   ["O",   "BX"]]
 words3 = [["highschoolgirl", "is", "almost", "super-duper-ridiculous"], ["yes", "it", "is", "me", "."]]
 codes3 = [["O",              "O",  "B-X",    "I-X"],                    ["B-Y", "B-Z", "O", "O", "O"]]
+words4 = ["Hugging Face Inc . is a company based in New York City . Its headquarters are in DUMBO .".split()]
+codes4 = ["B-ORG I-ORG I-ORG O O O O O O O O O O O O O B-LOC".split()]
 
 tokenizer = AutoTokenizer.from_pretrained("dslim/bert-base-NER-uncased")
 
