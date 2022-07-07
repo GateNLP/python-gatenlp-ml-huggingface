@@ -98,7 +98,6 @@ class HfTokenClassificationDestination(DocumentDestination):
         self.writer.finalize()
         self.writer.close()
         self.dataset = Dataset.from_file(os.path.join(self.outdir, "tmp.arrow"))
-        print("Set dataset to", self.dataset)
         self.dataset.save_to_disk(self.outdir)
         os.remove(os.path.join(self.outdir, "tmp.arrow"))
 
