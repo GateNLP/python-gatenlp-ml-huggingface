@@ -219,6 +219,8 @@ def run_docs2dataset(args):
 
 
 if __name__ == "__main__":
+    # TODO: proper handling of task sub-parsers and showing task specific help - see
+    #     https://docs.python.org/3/library/argparse.html#sub-commands
     aparser = build_argparser()
     args = aparser.parse_args()
     if args.help and args.task is None:
