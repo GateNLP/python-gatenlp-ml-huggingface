@@ -53,6 +53,7 @@ setup(
         "gatenlp-huggingface-train=gatenlp_ml_hugginface.train:run_training",
         "gatenlp-huggingface-eval=gatenlp_ml_huggingface.eval:run_eval",
         "gatenlp-huggingface-docs2dataset=gatenlp_ml_huggingface.export:run_docs2dataset",
+        "gatenlp-huggingface-dataset2docs=gatenlp_ml_huggingface.import:run_dataset2docs",
     ]},
     classifiers=[
         # "Development Status :: 6 - Mature",

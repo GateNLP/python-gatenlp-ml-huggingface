@@ -70,9 +70,6 @@ def build_argparser(description="Import dataset to a directory of documents"):
         dest="taskname",
         required=True,
     )
-    add_args_text(subparsers.add_parser("text", help="Text classification"))
-    add_args_chunk(subparsers.add_parser("token", help="Token classification"))
-    add_args_token(subparsers.add_parser("chunk", help="Chunk classification (NER etc)"))
     argparser.add_argument("dataset", type=str,
                            help="The HF dataset name or a local directory with the directory")
     argparser.add_argument("outdir", type=str,
@@ -84,8 +81,13 @@ def build_argparser(description="Import dataset to a directory of documents"):
                            help="Annotation set name to use (default annotation set)")
     argparser.add_argument("--covering_type", type=str,
                            help="Type of annotations covering the text/tokens (default: None, use whole document)")
+    argparser.add_argument("--log-every", type=int, default=1000,
+                           help="Log a progress message every that many processed documents (1000)")
     argparser.add_argument("--debug", action="store_true",
                            help="Enable debugging mode/logging")
+    add_args_text(subparsers.add_parser("text", help="Text classification"))
+    add_args_chunk(subparsers.add_parser("token", help="Token classification"))
+    add_args_token(subparsers.add_parser("chunk", help="Chunk classification (NER etc)"))
     return argparser
 
 
@@ -96,12 +98,14 @@ def dataset2docs_text(args, dest, logger=None):
     dsplits = load_dataset(args.dataset)
     if args.splits is None:
         splits = list(dsplits.keys())
+    n_processed = 0
     n_written = 0
+    n_error = 0
     for split in splits:
         ds = dsplits[split]
         print("DEBUG RUNNING FOR SPLIT", split)
         for ex in ds:
-            print("DEBUG: ", ex)
+            n_processed += 1
             txt = ex[args.text_field]
             lbl = ex[args.label_field]
             idx = None
@@ -119,6 +123,8 @@ def dataset2docs_text(args, dest, logger=None):
                     doc.features[args.idx_feature] = idx
             dest.append(doc)
             n_written += 1
+            if args.log_every and n_processed % args.log_every == 0:
+                logger.info(f"Documents processed: {n_processed}, errors: {n_error}, written: {n_written}")
     if logger:
         logger.info(f"Number of documents written: {n_written}")
 
@@ -136,6 +142,7 @@ def dataset2docs_token(args, dirsrc, logger=None):
     """
     raise Exception("Not yet implemented")
 
+
 def run_dataset2docs():
     aparser = build_argparser()
 
@@ -144,6 +151,10 @@ def run_dataset2docs():
         logger = init_logger(lvl=logging.DEBUG)
     else:
         logger = init_logger()
+    if not os.path.exists(args.outdir):
+        logger.info(f"Directory {args.outdir} does not exist, trying to create it")
+        os.mkdir(args.outdir)
+        logger.info(f"Directory {args.outdir} created")
     dest = DirFilesDestination(dirpath=args.outdir, fmt="bdocjs", ext="bdocjs")
     if args.taskname == "text":
         dataset2docs_text(args, dest, logger=logger)
