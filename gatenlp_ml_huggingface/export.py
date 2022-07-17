@@ -5,7 +5,8 @@ import os.path
 import os
 import argparse
 import logging
-from gatenlp.corpora.dirs import DirFilesSource
+import json
+from gatenlp.corpora.dirs import DirFilesSource, DirFilesCorpus
 from gatenlp.utils import init_logger
 from typing import Union, IO, Optional, List, Dict
 from datasets import Dataset, Features, Sequence, Value, ClassLabel
@@ -55,31 +56,24 @@ class HfTextClassificationDestination(DocumentDestination):
         :param label_feature: the feature that contains the classification label (either document feature
             or annotation feature) (required, default is "class")
         :param writer_batch_size: batch size to use for the ArrayWriter
-        :param labels: (required) a list of 2 or more classification labels
+        :param labels: a list of 2 or more classification labels or None to use whatever labels
+            occur
         """
         super().__init__()
-        assert isinstance(labels, list) and len(labels) > 0
         if not os.path.isdir(outdir):
-            raise Exception("Need to specify an existing directory!")
+            os.mkdir(outdir)
         self.outdir = outdir
         self.annset_name = annset_name
         self.text_type = text_type
         self.text_feature = text_feature
         self.labels = labels
+        self.seen_labels = set()
         if label_feature is None:
             label_feature = "class"
         self.label_feature = label_feature
-        self.features = Features(dict(
-            # id=Value(dtype="string"),
-            text=Value(dtype="string"),
-            label=ClassLabel(names=self.labels),
-        ))
-        self.writer = ArrowWriter(
-            path=os.path.join(self.outdir, "tmp.arrow"),
-            writer_batch_size=writer_batch_size,
-            features=self.features
-        )
+        self.outfh = open(os.path.join(self.outdir, "tmp.json"), "wt", encoding="utf-8")
         self.dataset = None
+        self.features = None
 
     def append(self, doc):
         """
@@ -103,9 +97,11 @@ class HfTextClassificationDestination(DocumentDestination):
             label = doc.features.get(self.label_feature)
             if label is None:
                 return
-            if label not in self.labels:
+            if self.labels and label not in self.labels:
                 raise Exception(f"Unknown label {label}")
-            self.writer.write(dict(text=txt, label=label))
+            self.seen_labels.add(label)
+            self.outfh.write(json.dumps(dict(text=txt, label=label)))
+            self.outfh.write("\n")
         else:
             anns = doc.annset(self.annset_name).with_type(self.text_type)
             for ann in anns:
@@ -118,17 +114,31 @@ class HfTextClassificationDestination(DocumentDestination):
                 label = ann.features.get(self.label_feature)
                 if label is None:
                     continue
-                if label not in self.labels:
+                if self.labels and label not in self.labels:
                     raise Exception(f"Unknown label {label}")
-                self.writer.write(dict(text=txt, label=label))
+                self.outfh.write(json.dumps(dict(text=txt, label=label)))
+                self.outfh.write("\n")
+                self.seen_labels.add(label)
         self._n += 1
 
     def close(self):
-        self.writer.finalize()
-        self.writer.close()
-        self.dataset = Dataset.from_file(os.path.join(self.outdir, "tmp.arrow"))
+        if self._n == 0:
+            raise Exception("No valid documents exported, cannot create dataset")
+        if self.labels:
+            labels = self.labels
+        else:
+            labels = list(self.seen_labels)
+        self.features = Features(dict(
+            # id=Value(dtype="string"),
+            text=Value(dtype="string"),
+            label=ClassLabel(names=labels),
+        ))
+        self.outfh.close()
+        with open(os.path.join(self.outdir, "gatenlp_info.json"), "wt") as outfp:
+            json.dump(dict(labels=labels), outfp)
+        self.dataset = Dataset.from_json(os.path.join(self.outdir, "tmp.json"), features=self.features)
         self.dataset.save_to_disk(self.outdir)
-        os.remove(os.path.join(self.outdir, "tmp.arrow"))
+        os.remove(os.path.join(self.outdir, "tmp.json"))
 
 
 class HfChunkClassificationDestination(DocumentDestination):
@@ -230,8 +240,8 @@ def add_args_text(argparser):
                            help="Annotation/document feature containing text (None)")
     argparser.add_argument("--label_feature", type=str, default="class",
                            help="Label annotation/document feature (class)")
-    argparser.add_argument("--labels", nargs="+", type=str, default=None,
-                           help="List of possible labels (None, required)")
+    argparser.add_argument("--labels", type=str, default=None,
+                           help="Comma separated list of possible labels (None, required)")
 
 
 def add_args_chunk(argparser):
@@ -256,7 +266,9 @@ def add_args_token(argparser):
     argparser.add_argument("--token_feature", type=str, default=None,
                            help="Token feature (None, use covered document text)")
     argparser.add_argument("--labels", nargs="+", type=str, default=None,
-                           help="List of possible labels (None, required)")
+                           help="Comma separated list of possible labels (None, required)")
+    argparser.add_argument("--label_feature", type=str, default="class",
+                           help="Label annotation/document feature (class)")
 
 
 def build_argparser(description="Export training data from a directory of documents"):
@@ -269,9 +281,6 @@ def build_argparser(description="Export training data from a directory of docume
         dest="taskname",
         required=True,
     )
-    add_args_text(subparsers.add_parser("text", help="Text classification"))
-    add_args_chunk(subparsers.add_parser("token", help="Token classification"))
-    add_args_token(subparsers.add_parser("chunk", help="Chunk classification (NER etc)"))
     argparser.add_argument("docdir", type=str,
                            help="Input directory"
                            )
@@ -281,7 +290,7 @@ def build_argparser(description="Export training data from a directory of docume
                            help="The split name (train)")
     argparser.add_argument("--recursive", action="store_true",
                            help="If specified, process all matching documents in the directory tree")
-    argparser.add_argument("--exts", nargs="+", default=[".bdocjs"],
+    argparser.add_argument("--exts", nargs="+", default=["bdocjs"],
                            help="File extensions to process (.bdocjs)")
     argparser.add_argument("--on_error", choices=["exit", "log", "ignore"], default="exit",
                            help="What to do if an error occurs writing the data for a document")
@@ -291,10 +300,11 @@ def build_argparser(description="Export training data from a directory of docume
                            help="Annotation set name to use (default annotation set)")
     argparser.add_argument("--covering_type", type=str,
                            help="Type of annotations covering the text/tokens (default: None, use whole document)")
-    argparser.add_argument("--writer_batch_size", type=int, default=100,
-                           help="Writer batch size (100)")
     argparser.add_argument("--debug", action="store_true",
                            help="Enable debugging mode/logging")
+    add_args_text(subparsers.add_parser("text", help="Text classification"))
+    add_args_chunk(subparsers.add_parser("token", help="Token classification"))
+    add_args_token(subparsers.add_parser("chunk", help="Chunk classification (NER etc)"))
     return argparser
 
 
@@ -302,14 +312,17 @@ def docs2dataset_text(args, dirsrc, logger=None):
     """
     Export directory corpus to a HF text classification dataset
     """
+    if args.labels:
+        labels = args.labels.split(",")
+    else:
+        labels = None
     with HfTextClassificationDestination(
         outdir=args.outdir,
         annset_name=args.annset_name,
         text_type=args.covering_type,
         text_feature=args.text_feature,
         label_feature=args.label_feature,
-        labels=args.labels,
-        writer_batch_size=args.writer_batch_size,
+        labels=labels,
     ) as dest:
         n_errors = 0
         n_read = 0
@@ -384,7 +397,7 @@ def run_docs2dataset():
         logger = init_logger(lvl=logging.DEBUG)
     else:
         logger = init_logger()
-    src = DirFilesSource(dirpath=args.docdir, recursive=args.recursive, exts=args.exts, fmt=args.fmt)
+    src = DirFilesSource(dirpath=args.docdir, recursive=args.recursive, fmt=args.fmt, exts=args.exts)
     if args.taskname == "text":
         docs2dataset_text(args, src, logger=logger)
     elif args.taskname == "chunk":
